@@ -1,0 +1,46 @@
+version: "3.7"
+
+services:
+  authelia-redis:
+    image: redis:${REDIS_VERSION}
+    container_name: authelia-redis
+    restart: unless-stopped
+    user: "${SYSTEM_USER}"
+    command: redis-server /usr/local/etc/redis/redis.conf
+    environment:
+      TZ: Europe/Moscow
+    volumes:
+      - ./authelia-redis.conf:/usr/local/etc/redis/redis.conf
+      - ${AUTHELIA_REDIS_DATA_PATH}:/data
+    ports:
+      - "${AUTHELIA_REDIS_PORT}:6379"
+
+  authelia-postgresql:
+    image: postgres:${POSTGRES_VERSION}
+    container_name: authelia-postgresql
+    restart: unless-stopped
+    user: "${SYSTEM_USER}"
+    environment:
+      POSTGRES_PASSWORD: "${AUTHELIA_POSTGRES_PASSWORD}"
+      POSTGRES_USER: "${AUTHELIA_POSTGRES_USER}"
+      POSTGRES_DB: "${AUTHELIA_POSTGRES_DB}"
+    ports:
+      - "${AUTHELIA_POSTGRES_PORT}:5432"
+    volumes:
+      - ${AUTHELIA_POSTGRES_DATA_PATH}:/var/lib/postgresql/data
+
+
+  # restyaboard-postgresql:
+  #   image: postgres:${POSTGRES_VERSION}
+  #   container_name: restyaboard-postgresql
+  #   restart: unless-stopped
+  #   user: "${SYSTEM_USER}"
+  #   environment:
+  #     POSTGRES_PASSWORD: "${RESTYABOARD_POSTGRES_PASSWORD}"
+  #     POSTGRES_USER: "${RESTYABOARD_POSTGRES_USER}"
+  #   ports:
+  #     - "${RESTYABOARD_POSTGRES_PORT}:5432"
+  #   volumes:
+  #     - ${RESTYABOARD_POSTGRES_DATA_PATH}:/var/lib/postgresql/data
+        
+    
