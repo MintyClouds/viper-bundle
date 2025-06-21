@@ -1,61 +1,163 @@
-version: "3.7"
 
 services:
-  # Authelia
-  authelia-redis:
-    image: redis:${REDIS_VERSION}
-    container_name: authelia-redis
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_NON_ROOT_USER: ${POSTGRES_NON_ROOT_USER}
+      POSTGRES_NON_ROOT_PASSWORD: ${POSTGRES_NON_ROOT_PASSWORD}
+    volumes:
+      - ./.docker_data/postgres:/var/lib/postgresql/data
+      - ./scripts/postgres-init-data.sh:/docker-entrypoint-initdb.d/init-data.sh
+      - postgres-socket:/var/run/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h localhost -U ${POSTGRES_USER}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  redis:
+    image: redis:7
+    container_name: redis
     restart: unless-stopped
-    user: "${SYSTEM_USER}"
+    # user: "${SYSTEM_USER}"
     command: redis-server /usr/local/etc/redis/redis.conf
+    networks: [backend]
     environment:
       TZ: Europe/Moscow
     volumes:
-      - ./authelia-redis.conf:/usr/local/etc/redis/redis.conf
-      - ${AUTHELIA_REDIS_DATA_PATH}:/data
-    ports:
-      - "${AUTHELIA_REDIS_PORT}:6379"
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - ./.docker_data/redis:/data
+      - redis-socket:/var/run/redis
 
-  authelia-postgresql:
-    image: postgres:${POSTGRES_VERSION}
-    container_name: authelia-postgresql
-    restart: unless-stopped
-    user: "${SYSTEM_USER}"
+
+
+  minio:
+    image: minio/minio:RELEASE.2025-05-24T17-08-30Z-cpuv1
+    command: server /data --console-address ":9001"
     environment:
-      POSTGRES_PASSWORD: "${AUTHELIA_POSTGRES_PASSWORD}"
-      POSTGRES_USER: "${AUTHELIA_POSTGRES_USER}"
-      POSTGRES_DB: "${AUTHELIA_POSTGRES_DB}"
-    ports:
-      - "${AUTHELIA_POSTGRES_PORT}:5432"
+      MINIO_ROOT_USER: ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
     volumes:
-      - ${AUTHELIA_POSTGRES_DATA_PATH}:/var/lib/postgresql/data
+      - ./.docker_data/minio-data:/data
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    networks: [backend]
 
-  # Wiki.js
-  wikijs-postgresql:
-    image: postgres:${POSTGRES_VERSION}
-    container_name: wikijs-postgresql
-    restart: unless-stopped
-    user: "${SYSTEM_USER}"
+  vikunja:
+    image: vikunja/vikunja:latest
+    depends_on: [postgres]
     environment:
-      POSTGRES_PASSWORD: "${WIKIJS_POSTGRES_PASSWORD}"
-      POSTGRES_USER: "${WIKIJS_POSTGRES_USER}"
-      POSTGRES_DB: "${WIKIJS_POSTGRES_DB}"
-    ports:
-      - "${WIKIJS_POSTGRES_PORT}:5432"
+      VIKUNJA_SERVICE_PUBLICURL: ${VIKUNJA_URL}
+      VIKUNJA_SERVICE_JWTSECRET: ${VIKUNJA_JWT}
+      VIKUNJA_DATABASE_TYPE: postgres
+      VIKUNJA_DATABASE_HOST: postgres
+      VIKUNJA_DATABASE_DATABASE: ${VIKUNJA_POSTGRES_DB_NAME}
+      VIKUNJA_DATABASE_USER: ${POSTGRES_NON_ROOT_USER}
+      VIKUNJA_DATABASE_PASSWORD: ${POSTGRES_NON_ROOT_PASSWORD}
+      VIKUNJA_SERVICE_ENABLEREGISTRATION: "false"
     volumes:
-      - ${WIKIJS_POSTGRES_DATA_PATH}:/var/lib/postgresql/data
-
-  # restyaboard-postgresql:
-  #   image: postgres:${POSTGRES_VERSION}
-  #   container_name: restyaboard-postgresql
-  #   restart: unless-stopped
-  #   user: "${SYSTEM_USER}"
-  #   environment:
-  #     POSTGRES_PASSWORD: "${RESTYABOARD_POSTGRES_PASSWORD}"
-  #     POSTGRES_USER: "${RESTYABOARD_POSTGRES_USER}"
-  #   ports:
-  #     - "${RESTYABOARD_POSTGRES_PORT}:5432"
-  #   volumes:
-  #     - ${RESTYABOARD_POSTGRES_DATA_PATH}:/var/lib/postgresql/data
+      - ./.docker_data/vikunja-files:/app/vikunja/files
+      - ./vikunja-config.yml:/etc/vikunja/config.yml:ro
         
-    
+    ports:
+      - "9002:3456"
+    networks: [backend]
+
+  outline:
+    image: outlinewiki/outline:latest
+    depends_on: [postgres, redis, minio]
+    environment:
+      NODE_ENV: production
+      URL: ${OUTLINE_URL}
+      SECRET_KEY: ${OUTLINE_SECRET_KEY}
+      UTILS_SECRET: ${OUTLINE_UTILS_SECRET}
+      DATABASE_URL: postgres://${POSTGRES_NON_ROOT_USER}:${POSTGRES_NON_ROOT_PASSWORD}@postgres:5432/public
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      FILE_STORAGE: s3
+      AWS_ACCESS_KEY_ID: ${MINIO_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_PASSWORD}
+      AWS_REGION: us-east-1
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET_NAME: outline-data
+      FORCE_HTTPS: "false"
+      PGSSLMODE: "disable"
+      # OICD -> Authelia
+      OIDC_CLIENT_ID: 'outline'
+      OIDC_CLIENT_SECRET: ${AUTHELIA_OUTLINE_OIDC_CLIENT_SECRET}
+      OIDC_AUTH_URI: '${AUTHELIA_DOMAIN}/api/oidc/authorization'
+      OIDC_TOKEN_URI: '${AUTHELIA_DOMAIN}/api/oidc/token'
+      OIDC_USERINFO_URI: '${AUTHELIA_DOMAIN}/api/oidc/userinfo'
+      OIDC_USERNAME_CLAIM: 'preferred_username'
+      OIDC_DISPLAY_NAME: 'Authelia'
+      OIDC_SCOPES: 'openid offline_access profile email'
+      OIDC_LOGOUT_URI: '${AUTHELIA_DOMAIN}/logout'
+    ports:
+      - "9003:3000"
+    networks: [backend]
+
+  authelia:
+    image: authelia/authelia:4.38.0
+    hostname: ${HOSTNAME}
+    container_name: "authelia"
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Moscow
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET_FILE: /config/AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET
+      AUTHELIA_NOTIFIER_SMTP_PASSWORD_FILE: /config/AUTHELIA_NOTIFIER_SMTP_PASSWORD
+      AUTHELIA_SESSION_REDIS_PASSWORD_FILE: /config/AUTHELIA_SESSION_REDIS_PASSWORD
+      AUTHELIA_SESSION_SECRET_FILE: /config/AUTHELIA_SESSION_SECRET
+      AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE: /config/AUTHELIA_STORAGE_ENCRYPTION_KEY
+      AUTHELIA_STORAGE_POSTGRES_PASSWORD_FILE: /config/AUTHELIA_STORAGE_POSTGRES_PASSWORD
+    ports:
+      - "9005:9091"
+    volumes:
+      - ./.docker_data/authelia:/config
+      - ./authelia-config.yml:/config/configuration.yml:ro
+      - redis-socket:/var/run/redis
+      - postgres-socket:/var/run/postgresql
+    depends_on:
+      - redis
+      - postgres
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    depends_on: [postgres]
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${N8N_POSTGRES_DB_NAME}
+      DB_POSTGRESDB_USER: ${POSTGRES_NON_ROOT_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_NON_ROOT_PASSWORD}
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASS}
+      # включаем установку community-узлов внутри контейнера
+      N8N_ENABLE_CREATE_NODE_DEV_CONSOLE: "true"
+    ports:
+      - "9006:5678"
+    volumes:
+      - ./${N8N_FILES_DIR}:/home/node/.n8n
+    networks: [backend]
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  redis-socket:
+    driver: local
+    driver_opts:
+      type: tmpfs           # <- in-memory volume
+      device: tmpfs
+      o: size=64k,uid=999,gid=1000,mode=770
+  postgres-socket:
+    driver: local
+    driver_opts:
+      type: tmpfs           # <- in-memory volume
+      device: tmpfs
+      o: size=64k,uid=999,gid=1000,mode=770

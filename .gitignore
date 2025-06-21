@@ -1,2 +1,5 @@
 .env
-docker_data/
+.docker_data/
+authelia-config.yml
+redis.conf
+vikunja-config.yml

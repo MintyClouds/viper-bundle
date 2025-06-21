@@ -1,0 +1,12 @@
+auth:
+  local:
+    enabled: false
+  openid:
+    enabled: true
+    redirecturl: 'https://tracker.example.op/auth/openid/'    # CHANGEME
+    providers:
+      - name: 'Authelia'
+        authurl: 'https://auth.example.io'    # CHANGEME
+        clientid: 'vikunja'
+        clientsecret: 'SECRET_PASSWORD'    # CHANGEME
+        scope: 'openid profile email'

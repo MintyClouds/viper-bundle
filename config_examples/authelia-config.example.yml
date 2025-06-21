@@ -1,0 +1,195 @@
+# yamllint disable rule:comments-indentation
+---
+###############################################################################
+#                           Authelia Configuration                            #
+###############################################################################
+
+theme: 'dark'
+server:
+
+  ## The address to listen on.
+  address: 'tcp://:9091'
+  buffers:
+    read: 4096
+    write: 4096
+
+  endpoints:
+    enable_pprof: false
+    enable_expvars: false
+  disable_healthcheck: false
+
+
+log:
+  level: info
+
+##
+totp:
+  issuer: 'authelia.com'
+  period: 30
+  skew: 1
+
+  authentication_backend:
+  password_reset:
+    disable: false
+  refresh_interval: 5m
+
+  file:
+    path: '/config/users_database.yml'
+    watch: true
+    search:
+      email: true
+      case_insensitive: true
+    password:
+      algorithm: argon2id
+      iterations: 1
+      key_length: 32
+      salt_length: 16
+      memory: 1024
+      parallelism: 8
+
+access_control:
+  default_policy: one_factor
+  rules:
+    - domain: "*.example.com"
+      policy: one_factor
+
+session:
+
+  cookies:
+    - name: 'authelia_session'    # CHANGEME
+      domain: 'example.com'       # CHANGEME
+      authelia_url: 'https://auth.example.com'    # CHANGEME
+      default_redirection_url: 'https://example.com'    # CHANGEME
+      same_site: lax
+      expiration: '1 hour'
+      inactivity: '5 minutes'
+      remember_me: '1 month'
+
+  redis:
+    host: '/var/run/redis/redis.sock'
+    database_index: 1
+    maximum_active_connections: 8
+    minimum_idle_connections: 0
+
+    
+regulation:
+  max_retries: 3
+  find_time: 2m
+  ban_time: 5m
+
+storage:
+  postgres:
+    address: 'unix:///var/run/postgresql'
+    database: 'authelia'    # CHANGEME
+    username: authelia         # CHANGEME
+    timeout: 5s
+    ssl:
+      mode: disable
+
+
+notifier:
+  disable_startup_check: false
+
+  smtp:
+    address: 'smtp://mail.provider.io:587'     # CHANGEME
+    timeout: 5s
+
+    ## The username used for SMTP authentication.
+    username: username@domain.io    # CHANGEME
+    ## The address to send the email FROM.
+    sender: username@domain.io      # CHANGEME
+
+    ## HELO/EHLO Identifier. Some SMTP Servers may reject the default of localhost.
+    identifier: mail.provider.io    # CHANGEME
+
+    ## Subject configuration of the emails sent. {title} is replaced by the text from the notifier.
+    subject: "[Authelia] {title}"
+
+    startup_check_address: test@authelia.com
+
+    ## By default we require some form of TLS. This disables this check though is not advised.
+    disable_require_tls: false
+
+    ## Disables sending HTML formatted emails.
+    disable_html_emails: false
+
+
+identity_providers:
+  oidc:
+    jwks:
+      - key_id: 'outline'
+        algorithm: 'RS256'
+        use: 'sig'
+        key: |
+          -----BEGIN RSA PRIVATE KEY-----
+          ...
+          -----END RSA PRIVATE KEY-----
+      - key_id: 'vikunja'
+        algorithm: 'RS256'
+        use: 'sig'
+        key: |
+          -----BEGIN RSA PRIVATE KEY-----
+          ...
+          -----END RSA PRIVATE KEY-----
+    clients:
+      - client_id: 'outline'
+        client_name: 'Outline'
+        # the digest of 'insecure_secret'
+        client_secret: '$pbkdf2-secret-password' # CHANGEME
+        public: false
+        authorization_policy: 'one_factor'
+        require_pkce: false
+        pkce_challenge_method: ''
+        redirect_uris:
+          - 'https://docs.example.io/auth/oidc.callback'
+        scopes:
+          - 'openid'
+          - 'offline_access'
+          - 'profile'
+          - 'email'
+        response_types:
+          - 'code'
+        grant_types:
+          - 'authorization_code'
+          - 'refresh_token'
+        access_token_signed_response_alg: 'none'
+        userinfo_signed_response_alg: 'none'
+        token_endpoint_auth_method: 'client_secret_post'
+        jwks:
+          - key_id: 'outline'
+            algorithm: 'RS256'
+            use: 'sig'
+            key: |
+              -----BEGIN PUBLIC KEY-----
+              ...
+              -----END PUBLIC KEY-----
+      - client_id: 'vikunja'
+        client_name: 'Vikunja'
+        # the digest of 'insecure_secret'
+        client_secret: '$pbkdf2-secret-password'    # CHANGEME
+        public: false
+        authorization_policy: 'one_factor'
+        require_pkce: false
+        pkce_challenge_method: ''
+        redirect_uris:
+          - 'https://tracker.example.io/auth/openid/authelia'    # CHANGEME
+        scopes:
+          - 'openid'
+          - 'profile'
+          - 'email'
+        response_types:
+          - 'code'
+        grant_types:
+          - 'authorization_code'
+        access_token_signed_response_alg: 'none'
+        userinfo_signed_response_alg: 'none'
+        token_endpoint_auth_method: 'client_secret_basic'
+        jwks:
+          - key_id: 'vikunja'
+            algorithm: 'RS256'
+            use: 'sig'
+            key: |
+              -----BEGIN PUBLIC KEY-----
+              ...
+              -----END PUBLIC KEY-----
+...
