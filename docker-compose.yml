@@ -41,6 +41,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+      MINIO_REGION: us-east-1
     volumes:
       - ./.docker_data/minio-data:/data
     ports:
@@ -81,13 +82,16 @@ services:
       DATABASE_URL: postgres://${POSTGRES_NON_ROOT_USER}:${POSTGRES_NON_ROOT_PASSWORD}@postgres:5432/public
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       FILE_STORAGE: s3
-      AWS_ACCESS_KEY_ID: ${MINIO_USER}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${MINIO_OUTLINE_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_OUTLINE_PASSWORD}
       AWS_REGION: us-east-1
-      S3_ENDPOINT: http://minio:9000
-      S3_BUCKET_NAME: outline-data
+      AWS_S3_UPLOAD_BUCKET_URL: ${MINIO_OUTLINE_BUCKET_URL}
+      AWS_S3_UPLOAD_BUCKET_NAME: outline
+      AWS_S3_ACL: private
+      AWS_S3_FORCE_PATH_STYLE: true
       FORCE_HTTPS: "false"
       PGSSLMODE: "disable"
+      FILE_STORAGE_IMPORT_MAX_SIZE: 1024000000
       # OICD -> Authelia
       OIDC_CLIENT_ID: 'outline'
       OIDC_CLIENT_SECRET: ${AUTHELIA_OUTLINE_OIDC_CLIENT_SECRET}
